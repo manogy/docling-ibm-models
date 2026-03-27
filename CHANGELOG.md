@@ -1,3 +1,9 @@
+## [v3.13.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.13.0) - 2026-03-27
+
+### Feature
+
+* Transformers to v5 ([#151](https://github.com/docling-project/docling-ibm-models/issues/151)) ([`4fa73b9`](https://github.com/docling-project/docling-ibm-models/commit/4fa73b93572a396ca10501ea9c6b83096dea2ff3))
+
 ## [v3.12.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.12.0) - 2026-03-09
 
 ### Feature
