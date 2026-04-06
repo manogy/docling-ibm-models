@@ -83,14 +83,14 @@ class DocumentFigureClassifierPredictorZDLC:
             # Initialize ZDLC inference session
             self._zdlc_session = zdlc_pyrt.InferenceSession(zdlc_model_path)
 
+            # Based on ONNX testing, the model expects:
+            # - NCHW format (batch, channels, height, width)
+            # - Normalized to [0-1] range (ToTensor does this automatically)
+            # - NO ImageNet normalization needed
             self._image_processor = transforms.Compose(
                 [
                     transforms.Resize((224, 224)),
-                    transforms.ToTensor(),
-                    transforms.Normalize(
-                        mean=[0.485, 0.456, 0.406],
-                        std=[0.47853944, 0.4732864, 0.47434163],
-                    ),
+                    transforms.ToTensor(),  # Converts to [0-1] and NCHW format
                 ]
             )
 
