@@ -165,6 +165,7 @@ class DocumentFigureClassifierPredictorZDLC:
             self._image_processor(image) for image in rgb_images
         ]
         # Convert to numpy array for ZDLC
+        # torchvision transforms output torch tensors, convert to numpy
         numpy_images = np.stack(
             [img.numpy() for img in processed_images]
         ).astype(np.float32)
@@ -172,13 +173,25 @@ class DocumentFigureClassifierPredictorZDLC:
         # Run ZDLC inference
         outputs = self._zdlc_session.run([numpy_images])
 
-        # Process outputs - assuming outputs[0] contains logits
-        logits = outputs[0]  # (batch_size, num_classes)
-
-        # Apply softmax to get probabilities
-        exp_logits = np.exp(logits - np.max(logits, axis=1, keepdims=True))
-        probs_batch = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
-        probs_batch = probs_batch.tolist()
+        # Process outputs
+        # outputs[0] should contain logits (batch_size, num_classes)
+        logits = outputs[0]
+        
+        # Check if output is already probabilities (sum to ~1) or logits
+        # If already probabilities, use directly; otherwise apply softmax
+        first_sample_sum = np.sum(np.abs(logits[0]))
+        
+        if 0.99 < first_sample_sum < 1.01:
+            # Already probabilities
+            probs_batch = logits.tolist()
+        else:
+            # Apply softmax to logits
+            exp_logits = np.exp(
+                logits - np.max(logits, axis=1, keepdims=True)
+            )
+            probs_batch = (
+                exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
+            ).tolist()
 
         predictions_batch = []
         for probs_image in probs_batch:

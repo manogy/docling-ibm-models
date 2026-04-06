@@ -104,9 +104,20 @@ def demo(
         total_ms = 1000 * (time.perf_counter() - t0)
         avg_ms = total_ms / len(images)
         
-        logger.info(f"✓ Inference complete!")
+        logger.info("✓ Inference complete!")
         logger.info(f"  Total time: {total_ms:.1f} ms")
         logger.info(f"  Average per image: {avg_ms:.1f} ms")
+        
+        # Debug: Check if predictions look reasonable
+        if outputs and len(outputs) > 0:
+            first_pred = outputs[0]
+            if first_pred and len(first_pred) > 0:
+                top_conf = first_pred[0][1]
+                if top_conf < 0.1:
+                    logger.warning(
+                        f"⚠ Low confidence detected ({top_conf:.4f}). "
+                        "Model output may need adjustment."
+                    )
     except Exception as e:
         logger.error(f"✗ Inference failed: {e}")
         import traceback
