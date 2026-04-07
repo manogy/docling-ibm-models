@@ -14,6 +14,10 @@ import sys
 import time
 from pathlib import Path
 
+# Add parent directory to Python path to import docling_ibm_models
+script_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(script_dir))
+
 from PIL import Image
 
 from docling_ibm_models.document_figure_classifier_model.document_figure_classifier_predictor_zdlc import (
