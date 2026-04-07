@@ -88,6 +88,7 @@ def main(args):
     image_dir = args.image_dir
     viz_dir = args.viz_dir
     zdlc_model_path = args.zdlc_model_path
+    artifact_path = args.artifact_path
 
     # Initialize logger
     logging.basicConfig(level=logging.INFO)
@@ -104,12 +105,16 @@ def main(args):
     # Ensure the viz dir
     Path(viz_dir).mkdir(parents=True, exist_ok=True)
 
-    # Download models from HF (for config files)
-    logger.info("Downloading model artifacts from HuggingFace...")
-    download_path = snapshot_download(
-        repo_id="ds4sd/DocumentFigureClassifier", revision="v1.0.0"
-    )
-    logger.info(f"Downloaded to: {download_path}")
+    # Use local artifacts or download from HF if not provided
+    if artifact_path and Path(artifact_path).exists():
+        logger.info(f"Using local model artifacts from: {artifact_path}")
+        download_path = artifact_path
+    else:
+        logger.info("Downloading model artifacts from HuggingFace...")
+        download_path = snapshot_download(
+            repo_id="ds4sd/DocumentFigureClassifier", revision="v1.0.0"
+        )
+        logger.info(f"Downloaded to: {download_path}")
 
     # Test the figure classifier model with ZDLC
     demo(logger, download_path, zdlc_model_path, num_threads, image_dir, viz_dir)
@@ -119,13 +124,19 @@ if __name__ == "__main__":
     r"""
     Demo script for testing DocumentFigureClassifierPredictorZDLC
 
-    Usage:
+    Usage with local artifacts (recommended):
+    python -m demo.demo_document_figure_classifier_predictor_zdlc \
+        -i tests/test_data/figure_classifier/images \
+        -z /path/to/compiled/model.so \
+        -a /path/to/model/artifacts
+
+    Usage with HuggingFace download:
     python -m demo.demo_document_figure_classifier_predictor_zdlc \
         -i tests/test_data/figure_classifier/images \
         -z /path/to/compiled/model.so
 
     This will:
-    1. Download the model config from HuggingFace
+    1. Load model config from local path or download from HuggingFace
     2. Load your ZDLC compiled .so model
     3. Run inference on test images
     4. Display classification results with probabilities
@@ -151,6 +162,14 @@ if __name__ == "__main__":
         "--zdlc_model_path",
         required=True,
         help="Path to ZDLC compiled .so model file",
+    )
+    parser.add_argument(
+        "-a",
+        "--artifact_path",
+        required=False,
+        default=None,
+        help="Path to local model artifacts (config.json, preprocessor_config.json). "
+             "If not provided, will download from HuggingFace.",
     )
     parser.add_argument(
         "-v",
