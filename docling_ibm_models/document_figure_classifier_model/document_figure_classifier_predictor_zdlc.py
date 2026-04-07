@@ -99,8 +99,10 @@ class DocumentFigureClassifierPredictorZDLC:
 
             config = AutoConfig.from_pretrained(artifacts_path)
 
-        self._classes = list(config.id2label.values())
-        self._classes.sort()
+        # CRITICAL: Keep classes in the SAME ORDER as model's id2label mapping
+        # The model outputs logits in id2label order (0, 1, 2, ..., 25)
+        # DO NOT sort alphabetically - that breaks the mapping!
+        self._classes = [config.id2label[i] for i in range(len(config.id2label))]
 
         _log.debug(
             "DocumentFigureClassifierModelZDLC settings: {}".format(
