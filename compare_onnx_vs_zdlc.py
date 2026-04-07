@@ -290,8 +290,7 @@ def main():
     
     # Load ZDLC model
     print(f"\n2. Loading ZDLC model: {zdlc_model_path}")
-    zdlc_model = zdlc_pyrt.Model(zdlc_model_path)
-    zdlc_model.set_num_threads(4)
+    zdlc_session = zdlc_pyrt.InferenceSession(zdlc_model_path)
     print(f"   ✅ ZDLC model loaded")
     
     # Run comparisons
@@ -321,7 +320,7 @@ def main():
         
         # Run ZDLC inference
         print("\n4. Running ZDLC inference...")
-        zdlc_output = zdlc_model.run([input_data])[0]
+        zdlc_output = zdlc_session.run([input_data])[0]
         zdlc_logits = zdlc_output[0]  # Remove batch dimension
         print(f"   ✅ ZDLC output shape: {zdlc_logits.shape}")
         
