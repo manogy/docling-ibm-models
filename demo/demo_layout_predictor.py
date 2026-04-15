@@ -106,6 +106,8 @@ def demo(
 
 def main(args):
     r"""Main function to run the layout predictor demo."""
+    import platform
+    
     num_threads = int(args.num_threads) if args.num_threads is not None else 4
     device = args.device.lower()
     img_dir = args.img_dir
@@ -125,6 +127,24 @@ def main(args):
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
+
+    # Check if running on s390x and ZDLC model path is required
+    is_s390x = platform.machine().lower() in ['s390x', 's390']
+    if is_s390x:
+        try:
+            import zdlc_pyrt
+            zdlc_available = True
+        except ImportError:
+            zdlc_available = False
+        
+        if zdlc_available and zdlc_model_path is None:
+            logger.error("=" * 80)
+            logger.error("ERROR: Running on s390x with ZDLC available")
+            logger.error("You MUST provide the ZDLC model path using -z/--zdlc_model_path")
+            logger.error("Example:")
+            logger.error(f"  python -m demo.demo_layout_predictor -i {img_dir} -z /path/to/model.so")
+            logger.error("=" * 80)
+            sys.exit(1)
 
     # Ensure the viz dir
     Path(viz_dir).mkdir(parents=True, exist_ok=True)
