@@ -281,16 +281,20 @@ class LayoutPredictor:
             )
 
         # Prepare inputs
+        target_sizes = np.array([page_img.size[::-1]], dtype=np.int64)
         inputs = self._image_processor(images=[page_img], return_tensors="np")
-        pixel_values = inputs["pixel_values"]
+        pixel_values = inputs["pixel_values"].astype(np.float32)
 
-        # Run ZDLC inference
-        outputs = self._zdlc_session.run([pixel_values])
+        # Run ZDLC inference - model expects [pixel_values, target_sizes]
+        outputs = self._zdlc_session.run([pixel_values, target_sizes])
         
         # Post-process ZDLC outputs
-        target_sizes = np.array([page_img.size[::-1]])
+        # outputs format: [logits, pred_boxes]
+        logits = outputs[0]  # (batch_size, num_queries, num_classes)
+        pred_boxes = outputs[1]  # (batch_size, num_queries, 4)
+        
         results = self._post_process_object_detection(
-            outputs, threshold=self._threshold, target_sizes=target_sizes
+            logits, pred_boxes, target_sizes, self._threshold
         )
 
         # Format results
@@ -325,24 +329,23 @@ class LayoutPredictor:
         return predictions
 
     def _post_process_object_detection(
-        self, outputs, threshold: float, target_sizes: np.ndarray
+        self, logits: np.ndarray, pred_boxes: np.ndarray,
+        target_sizes: np.ndarray, threshold: float
     ) -> List[Dict[str, np.ndarray]]:
         """
         Post-process ZDLC outputs to match RTDetr format.
         
         Parameters
         ----------
-        outputs: ZDLC model outputs (logits and boxes)
-        threshold: Score threshold for filtering predictions
+        logits: Model logits output (batch_size, num_queries, num_classes)
+        pred_boxes: Model boxes output (batch_size, num_queries, 4)
         target_sizes: Target image sizes for scaling boxes
+        threshold: Score threshold for filtering predictions
         
         Returns
         -------
         List of dicts with 'scores', 'labels', and 'boxes' keys
         """
-        # ZDLC outputs: [logits, boxes]
-        logits = outputs[0]  # Shape: (batch_size, num_queries, num_classes)
-        pred_boxes = outputs[1]  # Shape: (batch_size, num_queries, 4)
         
         # Apply softmax to get probabilities
         probs = np.exp(logits) / np.sum(np.exp(logits), axis=-1, keepdims=True)
@@ -482,16 +485,18 @@ class LayoutPredictor:
                 )
 
         # Prepare batch inputs
+        target_sizes = np.array([img.size[::-1] for img in pil_images], dtype=np.int64)
         inputs = self._image_processor(images=pil_images, return_tensors="np")
-        pixel_values = inputs["pixel_values"]
+        pixel_values = inputs["pixel_values"].astype(np.float32)
 
-        # Run ZDLC inference
-        outputs = self._zdlc_session.run([pixel_values])
+        # Run ZDLC inference - model expects [pixel_values, target_sizes]
+        outputs = self._zdlc_session.run([pixel_values, target_sizes])
         
         # Post-process ZDLC outputs
-        target_sizes = np.array([img.size[::-1] for img in pil_images])
+        logits = outputs[0]
+        pred_boxes = outputs[1]
         results_list = self._post_process_object_detection(
-            outputs, threshold=self._threshold, target_sizes=target_sizes
+            logits, pred_boxes, target_sizes, self._threshold
         )
 
         # Format results for each image
