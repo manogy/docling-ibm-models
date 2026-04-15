@@ -288,14 +288,23 @@ class LayoutPredictor:
         # Run ZDLC inference - model expects [pixel_values, target_sizes]
         outputs = self._zdlc_session.run([pixel_values, target_sizes])
         
-        # Post-process ZDLC outputs
-        # outputs format: [logits, pred_boxes]
-        logits = outputs[0]  # (batch_size, num_queries, num_classes)
-        pred_boxes = outputs[1]  # (batch_size, num_queries, 4)
+        # ZDLC model outputs are already post-processed:
+        # Output 0: labels (batch_size, num_queries) - int64
+        # Output 1: boxes (batch_size, num_queries, 4) - float32, absolute coords
+        # Output 2: scores (batch_size, num_queries) - float32
+        pred_labels = outputs[0]  # (batch_size, num_queries)
+        pred_boxes = outputs[1]   # (batch_size, num_queries, 4)
+        pred_scores = outputs[2]  # (batch_size, num_queries)
         
-        results = self._post_process_object_detection(
-            logits, pred_boxes, target_sizes, self._threshold
-        )
+        # Filter by threshold
+        results = []
+        for i in range(pred_labels.shape[0]):
+            mask = pred_scores[i] > self._threshold
+            results.append({
+                'labels': pred_labels[i][mask],
+                'boxes': pred_boxes[i][mask],
+                'scores': pred_scores[i][mask]
+            })
 
         # Format results
         result = results[0]
@@ -328,58 +337,6 @@ class LayoutPredictor:
 
         return predictions
 
-    def _post_process_object_detection(
-        self, logits: np.ndarray, pred_boxes: np.ndarray,
-        target_sizes: np.ndarray, threshold: float
-    ) -> List[Dict[str, np.ndarray]]:
-        """
-        Post-process ZDLC outputs to match RTDetr format.
-        
-        Parameters
-        ----------
-        logits: Model logits output (batch_size, num_queries, num_classes)
-        pred_boxes: Model boxes output (batch_size, num_queries, 4)
-        target_sizes: Target image sizes for scaling boxes
-        threshold: Score threshold for filtering predictions
-        
-        Returns
-        -------
-        List of dicts with 'scores', 'labels', and 'boxes' keys
-        """
-        
-        # Apply softmax to get probabilities
-        probs = np.exp(logits) / np.sum(np.exp(logits), axis=-1, keepdims=True)
-        
-        # Get scores and labels
-        scores = np.max(probs, axis=-1)  # (batch_size, num_queries)
-        labels = np.argmax(probs, axis=-1)  # (batch_size, num_queries)
-        
-        results = []
-        for i in range(logits.shape[0]):
-            # Filter by threshold
-            mask = scores[i] > threshold
-            filtered_scores = scores[i][mask]
-            filtered_labels = labels[i][mask]
-            filtered_boxes = pred_boxes[i][mask]
-            
-            # Scale boxes to target size
-            img_h, img_w = target_sizes[i]
-            # Boxes are in [cx, cy, w, h] format normalized to [0, 1]
-            # Convert to [x1, y1, x2, y2] format
-            cx, cy, w, h = filtered_boxes[:, 0], filtered_boxes[:, 1], filtered_boxes[:, 2], filtered_boxes[:, 3]
-            x1 = (cx - w / 2) * img_w
-            y1 = (cy - h / 2) * img_h
-            x2 = (cx + w / 2) * img_w
-            y2 = (cy + h / 2) * img_h
-            scaled_boxes = np.stack([x1, y1, x2, y2], axis=-1)
-            
-            results.append({
-                "scores": filtered_scores,
-                "labels": filtered_labels,
-                "boxes": scaled_boxes,
-            })
-        
-        return results
 
     def predict_batch(
         self, images: List[Union[Image.Image, np.ndarray]]
@@ -492,12 +449,20 @@ class LayoutPredictor:
         # Run ZDLC inference - model expects [pixel_values, target_sizes]
         outputs = self._zdlc_session.run([pixel_values, target_sizes])
         
-        # Post-process ZDLC outputs
-        logits = outputs[0]
+        # ZDLC model outputs are already post-processed
+        pred_labels = outputs[0]
         pred_boxes = outputs[1]
-        results_list = self._post_process_object_detection(
-            logits, pred_boxes, target_sizes, self._threshold
-        )
+        pred_scores = outputs[2]
+        
+        # Filter by threshold
+        results_list = []
+        for i in range(pred_labels.shape[0]):
+            mask = pred_scores[i] > self._threshold
+            results_list.append({
+                'labels': pred_labels[i][mask],
+                'boxes': pred_boxes[i][mask],
+                'scores': pred_scores[i][mask]
+            })
 
         # Format results for each image
         all_predictions = []
