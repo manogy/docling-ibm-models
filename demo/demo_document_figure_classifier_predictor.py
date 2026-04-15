@@ -8,7 +8,9 @@ from pathlib import Path
 from huggingface_hub import snapshot_download
 from PIL import Image
 
-from docling_ibm_models.document_figure_classifier_model.document_figure_classifier_predictor import DocumentFigureClassifierPredictor
+from docling_ibm_models.document_figure_classifier_model.document_figure_classifier_predictor import (
+    DocumentFigureClassifierPredictor,
+)
 
 
 def demo(
@@ -18,12 +20,20 @@ def demo(
     num_threads: int,
     image_dir: str,
     viz_dir: str,
+    zdlc_model_path: str = None,
 ):
     r"""
-    Apply DocumentFigureClassifierPredictor on the input image directory
+    Apply DocumentFigureClassifierPredictor on the input image directory.
+    Automatically uses ZDLC on s390x if available, otherwise uses PyTorch.
     """
-    # Create the layout predictor
-    document_figure_classifier_predictor = DocumentFigureClassifierPredictor(artifact_path, device=device, num_threads=num_threads)
+    # Create the document figure classifier predictor
+    # The predictor will automatically detect s390x and use ZDLC if available
+    document_figure_classifier_predictor = DocumentFigureClassifierPredictor(
+        artifact_path,
+        zdlc_model_path=zdlc_model_path,
+        device=device,
+        num_threads=num_threads
+    )
 
     image_dir = Path(image_dir)
     images = []
@@ -55,6 +65,7 @@ def main(args):
     device = args.device.lower()
     image_dir = args.image_dir
     viz_dir = args.viz_dir
+    zdlc_model_path = args.zdlc_model_path
 
     # Initialize logger
     logging.basicConfig(level=logging.DEBUG)
@@ -75,7 +86,8 @@ def main(args):
     download_path = snapshot_download(repo_id="ds4sd/DocumentFigureClassifier", revision="v1.0.0")
 
     # Test the figure classifier model
-    demo(logger, download_path, device, num_threads, image_dir, viz_dir)
+    # Note: The predictor will automatically detect s390x architecture and use ZDLC if available
+    demo(logger, download_path, device, num_threads, image_dir, viz_dir, zdlc_model_path)
 
 
 if __name__ == "__main__":
@@ -101,6 +113,13 @@ if __name__ == "__main__":
         required=False,
         default="viz/",
         help="Directory to save prediction visualizations",
+    )
+    parser.add_argument(
+        "-z",
+        "--zdlc_model_path",
+        required=False,
+        default=None,
+        help="Path to ZDLC compiled model (.so file) for s390x architecture. Auto-detected if not provided.",
     )
 
     args = parser.parse_args()

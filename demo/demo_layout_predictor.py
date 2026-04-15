@@ -5,6 +5,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List
+
 import numpy as np
 import torch
 from huggingface_hub import snapshot_download
@@ -58,15 +59,24 @@ def demo(
     img_dir: str,
     viz_dir: str,
     threshold: float,
+    zdlc_model_path: str = None,
 ):
     r"""
-    Apply LayoutPredictor on the input image directory
+    Apply LayoutPredictor on the input image directory.
+    Automatically uses ZDLC on s390x if available, otherwise uses PyTorch.
 
     If you want to load from PDF:
     pdf_image = pyvips.Image.new_from_file("test_data/ADS.2007.page_123.pdf", page=0)
     """
     # Create the layout predictor
-    predictor = LayoutPredictor(artifact_path, device=device, num_threads=num_threads, base_threshold=threshold)
+    # The predictor will automatically detect s390x and use ZDLC if available
+    predictor = LayoutPredictor(
+        artifact_path,
+        zdlc_model_path=zdlc_model_path,
+        device=device,
+        num_threads=num_threads,
+        base_threshold=threshold
+    )
 
     # Predict all test png images
     t0 = time.perf_counter()
@@ -95,13 +105,14 @@ def demo(
 
 
 def main(args):
-    r""" """
+    r"""Main function to run the layout predictor demo."""
     num_threads = int(args.num_threads) if args.num_threads is not None else 4
     device = args.device.lower()
     img_dir = args.img_dir
     viz_dir = args.viz_dir
     hugging_face_repo = args.hugging_face_repo
     threshold = float(args.threshold)
+    zdlc_model_path = args.zdlc_model_path
 
     # Initialize logger
     logging.basicConfig(level=logging.DEBUG)
@@ -122,7 +133,17 @@ def main(args):
     download_path = snapshot_download(repo_id=hugging_face_repo)
 
     # Test the LayoutPredictor
-    demo(logger, download_path, device, num_threads, img_dir, viz_dir, threshold)
+    # Note: Predictor auto-detects s390x and uses ZDLC if available
+    demo(
+        logger,
+        download_path,
+        device,
+        num_threads,
+        img_dir,
+        viz_dir,
+        threshold,
+        zdlc_model_path,
+    )
 
 
 if __name__ == "__main__":
@@ -167,6 +188,13 @@ if __name__ == "__main__":
         required=False,
         default="viz/",
         help="Directory to save prediction visualizations",
+    )
+    parser.add_argument(
+        "-z",
+        "--zdlc_model_path",
+        required=False,
+        default=None,
+        help="Path to ZDLC model (.so) for s390x. Auto-detected if not set.",
     )
 
     args = parser.parse_args()

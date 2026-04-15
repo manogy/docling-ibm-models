@@ -14,6 +14,19 @@ AI modules to support the Docling PDF document conversion project.
 - TableFormer is an AI module that recognizes the structure of a table and the bounding boxes of the table content.
 - Layout model is an AI model that provides among other things ability to detect tables on the page. This package contains inference code for Layout model.
 
+## IBM Z (s390x) Support
+
+This package includes automatic support for IBM Z Deep Learning Compiler (ZDLC) on s390x architecture:
+
+- **Automatic Detection**: The predictors automatically detect s390x architecture and use ZDLC when available
+- **Graceful Fallback**: Falls back to PyTorch if ZDLC is not available
+- **No Code Changes**: Existing code works seamlessly on both x86_64 and s390x architectures
+- **Optimized Performance**: ZDLC provides optimized inference on IBM Z with NNPA acceleration
+
+To use ZDLC on s390x:
+1. Install `zdlc-pyrt` package
+2. Provide ZDLC compiled model files (.so format)
+3. The predictors will automatically use ZDLC backend
 
 ## Install
 
@@ -92,15 +105,37 @@ Visualization outlines:
 
 ## Demo
 
-A demo application allows to apply the `LayoutPredictor` on a directory `<input_dir>` that contains
-`png` images and visualize the predictions inside another directory `<viz_dir>`.
+Demo applications allow you to test the models on your images. The demos automatically support both PyTorch and ZDLC backends.
 
-First download the model weights (see above), then run:
-```
+### Layout Predictor Demo
+
+Apply the `LayoutPredictor` on a directory `<input_dir>` containing PNG images:
+
+```bash
 python -m demo.demo_layout_predictor -i <input_dir> -v <viz_dir>
 ```
 
-e.g.
-```
+Example:
+```bash
 python -m demo.demo_layout_predictor -i tests/test_data/samples -v viz/
 ```
+
+For s390x with ZDLC model:
+```bash
+python -m demo.demo_layout_predictor -i tests/test_data/samples -v viz/ -z /path/to/model.so
+```
+
+### Document Figure Classifier Demo
+
+Apply the `DocumentFigureClassifierPredictor` on a directory of images:
+
+```bash
+python -m demo.demo_document_figure_classifier_predictor -i <image_dir>
+```
+
+For s390x with ZDLC model:
+```bash
+python -m demo.demo_document_figure_classifier_predictor -i <image_dir> -z /path/to/model.so
+```
+
+**Note**: On s390x systems, if ZDLC is available, the demos will automatically use it for optimized performance.
