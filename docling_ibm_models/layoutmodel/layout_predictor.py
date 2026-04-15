@@ -280,6 +280,10 @@ class LayoutPredictor:
                 "Unsupported input format. Supported formats are PIL.Image.Image or numpy.ndarray."
             )
 
+        # Convert grayscale to RGB if needed (ZDLC model expects 3 channels)
+        if page_img.mode != 'RGB':
+            page_img = page_img.convert('RGB')
+
         # Prepare inputs
         target_sizes = np.array([page_img.size[::-1]], dtype=np.int64)
         inputs = self._image_processor(images=[page_img], return_tensors="np")
