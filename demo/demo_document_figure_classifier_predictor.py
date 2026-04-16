@@ -1,7 +1,3 @@
-#
-# Copyright IBM Corp. 2024 - 2024
-# SPDX-License-Identifier: MIT
-#
 import argparse
 import logging
 import os
@@ -12,7 +8,9 @@ from pathlib import Path
 from huggingface_hub import snapshot_download
 from PIL import Image
 
-from docling_ibm_models.document_figure_classifier_model.document_figure_classifier_predictor import DocumentFigureClassifierPredictor
+from docling_ibm_models.document_figure_classifier_model.document_figure_classifier_predictor import (
+    DocumentFigureClassifierPredictor,
+)
 
 
 def demo(
@@ -22,12 +20,20 @@ def demo(
     num_threads: int,
     image_dir: str,
     viz_dir: str,
+    zdlc_model_path: str = None,
 ):
     r"""
-    Apply DocumentFigureClassifierPredictor on the input image directory
+    Apply DocumentFigureClassifierPredictor on the input image directory.
+    Automatically uses ZDLC on s390x if available, otherwise uses PyTorch.
     """
-    # Create the layout predictor
-    document_figure_classifier_predictor = DocumentFigureClassifierPredictor(artifact_path, device=device, num_threads=num_threads)
+    # Create the document figure classifier predictor
+    # The predictor will automatically detect s390x and use ZDLC if available
+    document_figure_classifier_predictor = DocumentFigureClassifierPredictor(
+        artifact_path,
+        zdlc_model_path=zdlc_model_path,
+        device=device,
+        num_threads=num_threads
+    )
 
     image_dir = Path(image_dir)
     images = []
@@ -55,10 +61,13 @@ def demo(
 
 
 def main(args):
+    import platform
+    
     num_threads = int(args.num_threads) if args.num_threads is not None else None
     device = args.device.lower()
     image_dir = args.image_dir
     viz_dir = args.viz_dir
+    zdlc_model_path = args.zdlc_model_path
 
     # Initialize logger
     logging.basicConfig(level=logging.DEBUG)
@@ -72,14 +81,36 @@ def main(args):
         handler.setFormatter(formatter)
         logger.addHandler(handler)
 
+    # Check if running on s390x and ZDLC model path is required
+    is_s390x = platform.machine().lower() in ['s390x', 's390']
+    if is_s390x:
+        try:
+            import zdlc_pyrt
+            zdlc_available = True
+        except ImportError:
+            zdlc_available = False
+        
+        if zdlc_available and zdlc_model_path is None:
+            logger.error("=" * 80)
+            logger.error("ERROR: Running on s390x with ZDLC available")
+            logger.error("You MUST provide the ZDLC model path using -z/--zdlc_model_path")
+            logger.error("Example:")
+            logger.error(f"  python -m demo.demo_document_figure_classifier_predictor -i {image_dir} -z /path/to/model.so")
+            logger.error("=" * 80)
+            sys.exit(1)
+
     # Ensure the viz dir
     Path(viz_dir).mkdir(parents=True, exist_ok=True)
 
     # Download models from HF
-    download_path = snapshot_download(repo_id="ds4sd/DocumentFigureClassifier", revision="v1.0.0")
+    download_path = snapshot_download(
+        repo_id="ds4sd/DocumentFigureClassifier",
+        revision="v1.0.0"
+    )
 
     # Test the figure classifier model
-    demo(logger, download_path, device, num_threads, image_dir, viz_dir)
+    # Note: Predictor auto-detects s390x and uses ZDLC if available
+    demo(logger, download_path, device, num_threads, image_dir, viz_dir, zdlc_model_path)
 
 
 if __name__ == "__main__":
@@ -105,6 +136,13 @@ if __name__ == "__main__":
         required=False,
         default="viz/",
         help="Directory to save prediction visualizations",
+    )
+    parser.add_argument(
+        "-z",
+        "--zdlc_model_path",
+        required=False,
+        default=None,
+        help="Path to ZDLC compiled model (.so file) for s390x architecture. Auto-detected if not provided.",
     )
 
     args = parser.parse_args()

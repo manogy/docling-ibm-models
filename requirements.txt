@@ -1,0 +1,35 @@
+# Core dependencies for docling-ibm-models
+# Generated from pyproject.toml
+
+# Deep Learning Framework
+torch>=2.2.2,<3.0.0
+torchvision>=0,<1
+
+# Transformers and Model Hub
+transformers>=4.42.0,<6.0.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*
+huggingface_hub>=0.23,<2
+accelerate>=1.2.1,<2.0.0
+safetensors[torch]>=0.4.3,<1
+
+# Image Processing
+Pillow>=10.0.0,<13.0.0
+
+# Data Processing
+numpy>=1.24.4,<3.0.0
+pydantic>=2.0.0,<3.0.0
+jsonlines>=3.1.0,<5.0.0
+
+# Utilities
+tqdm>=4.64.0,<5.0.0
+rtree>=1.0.0
+
+# Docling Core
+docling-core>=2.19.0,<3.0.0
+
+# Optional: OpenCV (choose one)
+# opencv-python-headless>=4.6.0.66,<5.0.0.0  # For headless environments
+# opencv-python>=4.6.0.66,<5.0.0.0           # For GUI support
+
+# ZDLC Support (for ZDLC predictors)
+# Uncomment if using ZDLC compiled models:
+# zdlc_pyrt @ git+ssh://git@github.ibm.com/zosdev/zdlc_pyrt.git

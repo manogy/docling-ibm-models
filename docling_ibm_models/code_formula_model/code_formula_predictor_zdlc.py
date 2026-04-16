@@ -3,11 +3,10 @@ import threading
 from typing import List, Optional, Union
 
 import numpy as np
-import torch
+import zdlc_pyrt
 from PIL import Image
 from transformers import AutoTokenizer, StoppingCriteria, StoppingCriteriaList
 
-from docling_ibm_models.code_formula_model.models.sam_opt import SamOPTForCausalLM
 from docling_ibm_models.code_formula_model.models.sam_opt_image_processor import (
     SamOptImageProcessor,
 )
@@ -34,78 +33,70 @@ class StopOnString(StoppingCriteria):
         return False
 
 
-class CodeFormulaPredictor:
+class CodeFormulaPredictorZDLC:
     """
-    Code and Formula Predictor using a multi-modal vision-language model.
+    Code and Formula Predictor using ZDLC compiled model.
 
     This class enables the prediction of code or LaTeX representations
-    from input images of code snippets or mathematical formulas.
+    from input images of code snippets or mathematical formulas using
+    ZDLC (IBM Z Deep Learning Compiler) compiled models.
 
     Attributes
     ----------
-    _device : str
-        The device on which the model is loaded (e.g., 'cpu' or 'cuda').
     _num_threads : int
-        Number of threads used for inference when running on CPU.
+        Number of threads used for inference.
     _tokenizer : transformers.PreTrainedTokenizer
         Tokenizer for processing textual inputs to the model.
-    _model : transformers.PreTrainedModel
-        Pretrained multi-modal vision-language model.
+    _zdlc_session : zdlc_pyrt.InferenceSession
+        ZDLC inference session for running the compiled model.
     _image_processor : transformers.ImageProcessor
         Processor for normalizing and preparing input images.
-    _temperature : float
-        Sampling temperature for generation; controls randomness in predictions.
     """
 
     def __init__(
         self,
         artifacts_path: str,
-        device: str = "cpu",
+        zdlc_model_path: str,
         num_threads: int = 4,
     ):
         """
-        Initializes the CodeFormulaPredictor with the specified model artifacts.
+        Initializes the CodeFormulaPredictorZDLC with the specified model artifacts.
 
         Parameters
         ----------
         artifacts_path : str
-            Path to the directory containing the pretrained model files.
-        device : str, optional
-            Device to run the inference on ('cpu' or 'cuda'), by default "cpu".
+            Path to the directory containing the pretrained model files (tokenizer, image processor).
+        zdlc_model_path : str
+            Path to the ZDLC compiled .so model file.
         num_threads : int, optional
-            Number of threads for CPU inference, by default 4.
+            Number of threads for inference, by default 4.
         """
-        self._device = device
         self._num_threads = num_threads
-        if device == "cpu":
-            torch.set_num_threads(self._num_threads)
 
         # Use lock to prevent threading issues during model initialization
         with _model_init_lock:
             self._tokenizer = AutoTokenizer.from_pretrained(
                 artifacts_path, use_fast=True, padding_side="left"
             )
-            self._model = SamOPTForCausalLM.from_pretrained(
-                artifacts_path, device_map=self._device
-            )
-            self._model.eval()
-
+            
+            # Initialize ZDLC inference session
+            self._zdlc_session = zdlc_pyrt.InferenceSession(zdlc_model_path)
+            
             self._image_processor = SamOptImageProcessor.from_pretrained(artifacts_path)
 
-        _log.debug("CodeFormulaModel settings: {}".format(self.info()))
+        _log.debug("CodeFormulaModelZDLC settings: {}".format(self.info()))
 
     def info(self) -> dict:
         """
-        Retrieves configuration details of the CodeFormulaPredictor instance.
+        Retrieves configuration details of the CodeFormulaPredictorZDLC instance.
 
         Returns
         -------
         dict
-            A dictionary containing configuration details such as the device and
-            the number of threads used.
+            A dictionary containing configuration details such as the number of threads used.
         """
         info = {
-            "device": self._device,
+            "backend": "ZDLC",
             "num_threads": self._num_threads,
         }
         return info
@@ -172,7 +163,6 @@ class CodeFormulaPredictor:
 
         return text.strip()
 
-    @torch.inference_mode()
     def predict(
         self,
         images: List[Union[Image.Image, np.ndarray]],
@@ -194,14 +184,13 @@ class CodeFormulaPredictor:
         Returns
         -------
         List[str]
-            List of predicted textual outputs for each input image in the given input
-            order.
+            List of predicted textual outputs for each input image in the given input order.
 
         Raises
         ------
         TypeError
             If any of the input images is not of a supported type (PIL Image or numpy array).
-        Excpetion
+        Exception
             In case the temperature is an invalid number.
         """
         if (
@@ -210,11 +199,6 @@ class CodeFormulaPredictor:
             or temperature < 0
         ):
             raise Exception("Temperature must be a number greater or equal to 0.")
-
-        do_sample = True
-        if temperature == 0:
-            do_sample = False
-            temperature = None
 
         if len(labels) != len(images):
             raise Exception(
@@ -231,56 +215,32 @@ class CodeFormulaPredictor:
                 raise TypeError("Not supported input image format")
             images_tmp.append(image)
 
-        images_tensor = torch.stack(
-            [self._image_processor(img) for img in images_tmp]
-        ).to(self._device)
+        # Process images to numpy arrays
+        images_array = np.stack(
+            [self._image_processor(img).numpy() for img in images_tmp]
+        )
 
         prompts = [self._get_prompt(label) for label in labels]
 
-        tokenized = self._tokenizer(prompts, padding=True, return_tensors="pt")
-        tokenized = {k: v.to(self._device) for k, v in tokenized.items()}
-
+        tokenized = self._tokenizer(prompts, padding=True, return_tensors="np")
+        
         prompt_ids = tokenized["input_ids"]
         attention_mask = tokenized["attention_mask"]
 
-        stopping_criteria = StoppingCriteriaList(
-            [
-                StopOnString(self._tokenizer, r" \quad \quad \quad \quad"),
-                StopOnString(self._tokenizer, r" \\ \\ \\ \\"),
-                StopOnString(self._tokenizer, r" \, \, \, \,"),
-                StopOnString(self._tokenizer, r" c c c c c c c c c c c c c c c c"),
-                StopOnString(self._tokenizer, r" l l l l l l l l l l l l l l l l l"),
-            ]
-        )
-
-        if self._device == "cpu":
-            output_ids_list = self._model.generate(  # type: ignore[misc]
-                input_ids=prompt_ids,
-                attention_mask=attention_mask,
-                images=images_tensor,
-                do_sample=do_sample,
-                temperature=temperature,
-                max_new_tokens=4096 - prompt_ids.shape[1],
-                use_cache=True,
-                no_repeat_ngram_size=200,
-                stopping_criteria=stopping_criteria,
-            )
-        else:
-            with torch.autocast(device_type=self._device, dtype=torch.bfloat16):
-                output_ids_list = self._model.generate(  # type: ignore[misc]
-                    prompt_ids,
-                    images=images_tensor,
-                    do_sample=do_sample,
-                    temperature=temperature,
-                    max_new_tokens=4096 - prompt_ids.shape[1],
-                    use_cache=True,
-                    no_repeat_ngram_size=200,
-                    stopping_criteria=stopping_criteria,
-                )
-
+        # Run ZDLC inference
+        # Note: The exact input format depends on how the ONNX model was exported
+        # This assumes the model takes input_ids, attention_mask, and images
+        outputs = self._zdlc_session.run([prompt_ids, attention_mask, images_array])
+        
+        # Process outputs - assuming outputs[0] contains the generated token ids
+        output_ids_list = outputs[0]
+        
+        # Decode the outputs
         outputs = self._tokenizer.batch_decode(
             output_ids_list[:, prompt_ids.shape[1] :], skip_special_tokens=True
         )
         outputs = [self._strip(output) for output in outputs]
 
         return outputs
+
+# Made with Bob

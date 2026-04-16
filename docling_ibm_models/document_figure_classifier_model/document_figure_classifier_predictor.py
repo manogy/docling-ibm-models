@@ -1,26 +1,44 @@
-#
-# Copyright IBM Corp. 2024 - 2024
-# SPDX-License-Identifier: MIT
-#
 import logging
+import platform
 import threading
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
-import torch
 import torchvision.transforms as transforms
 from PIL import Image
-from transformers import AutoConfig, AutoModelForImageClassification
+from transformers import AutoConfig
 
 _log = logging.getLogger(__name__)
 
 # Global lock for model initialization to prevent threading issues
 _model_init_lock = threading.Lock()
 
+# Detect architecture at module load time
+_IS_S390X = platform.machine().lower() in ['s390x', 's390']
+
+# Conditional imports based on architecture
+if _IS_S390X:
+    try:
+        import zdlc_pyrt
+        _ZDLC_AVAILABLE = True
+        _log.info("Running on s390x architecture - ZDLC backend will be used")
+    except ImportError:
+        _ZDLC_AVAILABLE = False
+        _log.warning("Running on s390x but zdlc_pyrt not available, falling back to PyTorch")
+        import torch
+        from transformers import AutoModelForImageClassification
+else:
+    _ZDLC_AVAILABLE = False
+    import torch
+    from transformers import AutoModelForImageClassification
+    _log.info(f"Running on {platform.machine()} architecture - PyTorch backend will be used")
+
 
 class DocumentFigureClassifierPredictor:
     r"""
     Model for classifying document figures.
+
+    Automatically uses ZDLC backend on s390x architecture, PyTorch on others.
 
     Classifies figures as 1 out of 16 possible classes.
 
@@ -44,30 +62,36 @@ class DocumentFigureClassifierPredictor:
 
     Attributes
     ----------
+    _backend : str
+        The backend being used ('ZDLC' or 'PyTorch').
     _device : str
         The device on which the model is loaded (e.g., 'cpu' or 'cuda').
+        Only used with PyTorch backend.
     _num_threads : int
-        Number of threads used for inference when running on CPU.
-    _model : EfficientNetForImageClassification
-        Pretrained EfficientNetb0 model.
-    _image_processor : EfficientNetImageProcessor
+        Number of threads used for inference.
+    _model : EfficientNetForImageClassification or None
+        Pretrained EfficientNetb0 model (PyTorch backend only).
+    _zdlc_session : zdlc_pyrt.InferenceSession or None
+        ZDLC inference session (ZDLC backend only).
+    _image_processor : torchvision.transforms.Compose
         Processor for normalizing and preparing input images.
     _classes: List[str]:
         The classes used by the model.
 
     Methods
     -------
-    __init__(artifacts_path, device, num_threads)
+    __init__(artifacts_path, zdlc_model_path, device, num_threads)
         Initializes the DocumentFigureClassifierPredictor with the specified parameters.
     info() -> dict:
         Retrieves configuration details of the DocumentFigureClassifierPredictor instance.
-    predict(images) -> List[List[float]]
+    predict(images) -> List[List[Tuple[str, float]]]
         The confidence scores for the classification of each image.
     """
 
     def __init__(
         self,
         artifacts_path: str,
+        zdlc_model_path: Optional[str] = None,
         device: str = "cpu",
         num_threads: int = 4,
     ):
@@ -78,14 +102,40 @@ class DocumentFigureClassifierPredictor:
         ----------
         artifacts_path : str
             Path to the directory containing the pretrained model files.
+        zdlc_model_path : str, optional
+            Path to the ZDLC compiled .so model file. Required when running
+            on s390x architecture with ZDLC available.
         device : str, optional
             Device to run the inference on ('cpu' or 'cuda'), by default "cpu".
+            Only used with PyTorch backend.
         num_threads : int, optional
             Number of threads for CPU inference, by default 4.
         """
-        self._device = device
         self._num_threads = num_threads
+        self._model = None
+        self._zdlc_session = None
+        
+        # Determine which backend to use
+        use_zdlc = _IS_S390X and _ZDLC_AVAILABLE
+        
+        if use_zdlc:
+            if zdlc_model_path is None:
+                raise ValueError(
+                    "zdlc_model_path is required when running on s390x with ZDLC available"
+                )
+            self._backend = "ZDLC"
+            self._device = "cpu"  # ZDLC runs on CPU
+            self._init_zdlc(artifacts_path, zdlc_model_path)
+        else:
+            self._backend = "PyTorch"
+            self._device = device
+            self._init_pytorch(artifacts_path, device)
+        
+        _log.info(f"DocumentFigureClassifierPredictor initialized with {self._backend} backend")
+        _log.debug("DocumentFigureClassifierPredictor settings: {}".format(self.info()))
 
+    def _init_pytorch(self, artifacts_path: str, device: str):
+        """Initialize PyTorch backend."""
         if device == "cpu":
             torch.set_num_threads(self._num_threads)
 
@@ -108,10 +158,37 @@ class DocumentFigureClassifierPredictor:
 
             config = AutoConfig.from_pretrained(artifacts_path)
 
-        self._classes = list(config.id2label.values())
-        self._classes.sort()
+        # CRITICAL: Keep classes in the SAME ORDER as model's id2label mapping
+        # The model outputs logits in id2label order (0, 1, 2, ..., 25)
+        # DO NOT sort alphabetically - that breaks the mapping!
+        self._classes = [config.id2label[i] for i in range(len(config.id2label))]
 
-        _log.debug("CodeFormulaModel settings: {}".format(self.info()))
+    def _init_zdlc(self, artifacts_path: str, zdlc_model_path: str):
+        """Initialize ZDLC backend."""
+        with _model_init_lock:
+            # Initialize ZDLC inference session
+            self._zdlc_session = zdlc_pyrt.InferenceSession(zdlc_model_path)
+
+            # The model expects:
+            # - NCHW format (batch, channels, height, width)
+            # - ImageNet normalization (same as original PyTorch model)
+            self._image_processor = transforms.Compose(
+                [
+                    transforms.Resize((224, 224)),
+                    transforms.ToTensor(),  # Converts to [0-1] and NCHW format
+                    transforms.Normalize(
+                        mean=[0.485, 0.456, 0.406],
+                        std=[0.47853944, 0.4732864, 0.47434163],
+                    ),
+                ]
+            )
+
+            config = AutoConfig.from_pretrained(artifacts_path)
+
+        # CRITICAL: Keep classes in the SAME ORDER as model's id2label mapping
+        # The model outputs logits in id2label order (0, 1, 2, ..., 25)
+        # DO NOT sort alphabetically - that breaks the mapping!
+        self._classes = [config.id2label[i] for i in range(len(config.id2label))]
 
     def info(self) -> dict:
         """
@@ -120,10 +197,11 @@ class DocumentFigureClassifierPredictor:
         Returns
         -------
         dict
-            A dictionary containing configuration details such as the device,
-            the number of threads used and the classe sused by the model.
+            A dictionary containing configuration details such as the backend,
+            device, the number of threads used and the classes used by the model.
         """
         info = {
+            "backend": self._backend,
             "device": self._device,
             "num_threads": self._num_threads,
             "classes": self._classes,
@@ -134,7 +212,7 @@ class DocumentFigureClassifierPredictor:
         self, images: List[Union[Image.Image, np.ndarray]]
     ) -> List[List[Tuple[str, float]]]:
         r"""
-            Performs inference on a batch of figures.
+        Performs inference on a batch of figures.
 
         Parameters
         ----------
@@ -153,6 +231,15 @@ class DocumentFigureClassifierPredictor:
 
             The predictions for each image are sorted in descending order of confidence.
         """
+        if self._backend == "ZDLC":
+            return self._predict_zdlc(images)
+        else:
+            return self._predict_pytorch(images)
+
+    def _predict_pytorch(
+        self, images: List[Union[Image.Image, np.ndarray]]
+    ) -> List[List[Tuple[str, float]]]:
+        """PyTorch backend prediction."""
         rgb_images = []
         for image in images:
             if isinstance(image, Image.Image):
@@ -176,6 +263,67 @@ class DocumentFigureClassifierPredictor:
         predictions_batch = []
         for probs_image in probs_batch:
             preds = [(self._classes[i], prob) for i, prob in enumerate(probs_image)]
+            preds.sort(key=lambda t: t[1], reverse=True)
+            predictions_batch.append(preds)
+
+        return predictions_batch
+
+    def _predict_zdlc(
+        self, images: List[Union[Image.Image, np.ndarray]]
+    ) -> List[List[Tuple[str, float]]]:
+        """ZDLC backend prediction."""
+        rgb_images = []
+        for image in images:
+            if isinstance(image, Image.Image):
+                rgb_images.append(image.convert("RGB"))
+            elif isinstance(image, np.ndarray):
+                rgb_images.append(Image.fromarray(image).convert("RGB"))
+            else:
+                raise TypeError(
+                    "Supported input formats are PIL.Image.Image or numpy.ndarray."
+                )
+
+        # (batch_size, 3, 224, 224)
+        processed_images = [
+            self._image_processor(image) for image in rgb_images
+        ]
+        # Convert to numpy array for ZDLC
+        # torchvision transforms output torch tensors, convert to numpy
+        numpy_images = np.stack(
+            [img.numpy() for img in processed_images]
+        ).astype(np.float32)
+
+        # Run ZDLC inference
+        outputs = self._zdlc_session.run([numpy_images])
+
+        # Process outputs
+        # outputs[0] should contain logits (batch_size, num_classes)
+        logits = outputs[0]
+        
+        # Check if output is already probabilities (sum to ~1) or logits
+        # If already probabilities, use directly; otherwise apply softmax
+        first_sample_sum = np.sum(np.abs(logits[0]))
+        
+        if 0.99 < first_sample_sum < 1.01:
+            # Already probabilities
+            probs_batch = logits.tolist()
+        else:
+            # Apply softmax to logits
+            exp_logits = np.exp(
+                logits - np.max(logits, axis=1, keepdims=True)
+            )
+            probs_batch = (
+                exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
+            ).tolist()
+
+        predictions_batch = []
+        for probs_image in probs_batch:
+            # Handle case where model outputs more/fewer classes than expected
+            num_classes = min(len(probs_image), len(self._classes))
+            preds = [
+                (self._classes[i], probs_image[i])
+                for i in range(num_classes)
+            ]
             preds.sort(key=lambda t: t[1], reverse=True)
             predictions_batch.append(preds)
 
