@@ -1,6 +1,6 @@
 #!/bin/bash
 # Setup script for E2E ZDLC testing environment
-# This script installs wdu and watson_doc_understanding from local branches
+# This script clones/uses wdu and watson_doc_understanding repos and configures them
 
 set -e  # Exit on error
 
@@ -11,32 +11,54 @@ echo ""
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-echo "Script directory: $SCRIPT_DIR"
+PARENT_DIR="$(dirname "$SCRIPT_DIR")"
+
+echo "Current directory: $SCRIPT_DIR"
+echo "Parent directory: $PARENT_DIR"
 echo ""
 
-# Define paths to the three repositories
+# Define paths
 DOCLING_IBM_MODELS_DIR="$SCRIPT_DIR"
-WDU_DIR="$(dirname "$SCRIPT_DIR")/wdu"
-WATSON_DOC_DIR="$(dirname "$SCRIPT_DIR")/watson_doc_understanding"
+WDU_DIR="$PARENT_DIR/wdu"
+WATSON_DOC_DIR="$PARENT_DIR/watson_doc_understanding"
+
+# Model paths (update these to match your setup)
+LAYOUT_ARTIFACTS_PATH="$PARENT_DIR/docling-layout-heron"
+LAYOUT_ZDLC_PATH="$PARENT_DIR/docling-layout-heron/docling-layout-heron-NNPA.so"
+CLASSIFIER_ARTIFACTS_PATH="$PARENT_DIR/DocumentFigureClassifier-v2.0"
+CLASSIFIER_ZDLC_PATH="$PARENT_DIR/DocumentFigureClassifier-v2.0/DocumentFigureClassifier-V2-NNPA.so"
 
 echo "Repository paths:"
 echo "  docling-ibm-models: $DOCLING_IBM_MODELS_DIR"
 echo "  wdu: $WDU_DIR"
 echo "  watson_doc_understanding: $WATSON_DOC_DIR"
 echo ""
+echo "Model paths:"
+echo "  Layout artifacts: $LAYOUT_ARTIFACTS_PATH"
+echo "  Layout ZDLC: $LAYOUT_ZDLC_PATH"
+echo "  Classifier artifacts: $CLASSIFIER_ARTIFACTS_PATH"
+echo "  Classifier ZDLC: $CLASSIFIER_ZDLC_PATH"
+echo ""
 
-# Check if directories exist
+# Clone wdu if it doesn't exist
 if [ ! -d "$WDU_DIR" ]; then
-    echo "❌ Error: wdu directory not found at $WDU_DIR"
-    exit 1
+    echo "Cloning wdu repository..."
+    cd "$PARENT_DIR"
+    git clone https://github.ibm.com/ai-foundation/wdu.git
+    echo "✅ wdu cloned"
+else
+    echo "✅ wdu directory already exists"
 fi
 
+# Clone watson_doc_understanding if it doesn't exist
 if [ ! -d "$WATSON_DOC_DIR" ]; then
-    echo "❌ Error: watson_doc_understanding directory not found at $WATSON_DOC_DIR"
-    exit 1
+    echo "Cloning watson_doc_understanding repository..."
+    cd "$PARENT_DIR"
+    git clone https://github.ibm.com/ai-foundation/watson_doc_understanding.git
+    echo "✅ watson_doc_understanding cloned"
+else
+    echo "✅ watson_doc_understanding directory already exists"
 fi
-
-echo "✅ All repository directories found"
 echo ""
 
 # Check Python version
@@ -44,7 +66,6 @@ echo "Checking Python version..."
 PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
 echo "Python version: $PYTHON_VERSION"
 
-# Check if Python 3.11 or 3.12
 if [[ ! "$PYTHON_VERSION" =~ ^3\.(11|12) ]]; then
     echo "⚠️  Warning: Python 3.11 or 3.12 recommended, you have $PYTHON_VERSION"
 fi
@@ -77,7 +98,7 @@ echo "=========================================="
 echo "Installing docling-ibm-models (Layer 1)"
 echo "=========================================="
 cd "$DOCLING_IBM_MODELS_DIR"
-echo "Current branch: $(git branch --show-current)"
+echo "Current branch: $(git branch --show-current 2>/dev/null || echo 'detached HEAD')"
 pip install -e .
 echo "✅ docling-ibm-models installed"
 echo ""
@@ -87,9 +108,42 @@ echo "=========================================="
 echo "Installing wdu (Layer 2)"
 echo "=========================================="
 cd "$WDU_DIR"
-echo "Current branch: $(git branch --show-current)"
+echo "Current branch: $(git branch --show-current 2>/dev/null || echo 'detached HEAD')"
 pip install -e .
 echo "✅ wdu installed"
+echo ""
+
+# Create wdu config override file
+echo "=========================================="
+echo "Creating WDU configuration override"
+echo "=========================================="
+WDU_CONFIG_OVERRIDE="$PARENT_DIR/wdu_config_override.py"
+cat > "$WDU_CONFIG_OVERRIDE" << EOF
+"""
+WDU Configuration Override for E2E Testing
+This file overrides the model paths without modifying the wdu repository.
+"""
+from wdu.config.wdu_config import WduConfig
+
+# Create config with custom model paths
+config = WduConfig()
+
+# Override layout model paths
+config.models.layout_model.weights_path = "$LAYOUT_ARTIFACTS_PATH"
+config.models.layout_model.zdlc_model_path = "$LAYOUT_ZDLC_PATH"
+
+# Override document figure classifier paths
+config.models.document_figure_classifier.weights_path = "$CLASSIFIER_ARTIFACTS_PATH"
+config.models.document_figure_classifier.zdlc_model_path = "$CLASSIFIER_ZDLC_PATH"
+
+print("✅ WDU config override loaded")
+print(f"   Layout artifacts: {config.models.layout_model.weights_path}")
+print(f"   Layout ZDLC: {config.models.layout_model.zdlc_model_path}")
+print(f"   Classifier artifacts: {config.models.document_figure_classifier.weights_path}")
+print(f"   Classifier ZDLC: {config.models.document_figure_classifier.zdlc_model_path}")
+EOF
+
+echo "✅ WDU config override created at: $WDU_CONFIG_OVERRIDE"
 echo ""
 
 # Install watson_doc_understanding
@@ -97,7 +151,7 @@ echo "=========================================="
 echo "Installing watson_doc_understanding (Layer 3)"
 echo "=========================================="
 cd "$WATSON_DOC_DIR"
-echo "Current branch: $(git branch --show-current)"
+echo "Current branch: $(git branch --show-current 2>/dev/null || echo 'detached HEAD')"
 pip install -e .
 echo "✅ watson_doc_understanding installed"
 echo ""
@@ -109,6 +163,39 @@ echo "=========================================="
 cd "$DOCLING_IBM_MODELS_DIR"
 pip install pytest requests
 echo "✅ Test dependencies installed"
+echo ""
+
+# Verify model files exist
+echo "=========================================="
+echo "Verifying model files"
+echo "=========================================="
+echo ""
+
+if [ -f "$LAYOUT_ARTIFACTS_PATH/config.json" ]; then
+    echo "✅ Layout model artifacts found"
+else
+    echo "❌ Layout model artifacts NOT found at: $LAYOUT_ARTIFACTS_PATH"
+fi
+
+if [ -f "$LAYOUT_ZDLC_PATH" ]; then
+    echo "✅ Layout ZDLC model found"
+else
+    echo "⚠️  Layout ZDLC model NOT found at: $LAYOUT_ZDLC_PATH"
+    echo "   (This is OK if not running on s390x)"
+fi
+
+if [ -f "$CLASSIFIER_ARTIFACTS_PATH/config.json" ]; then
+    echo "✅ Classifier model artifacts found"
+else
+    echo "❌ Classifier model artifacts NOT found at: $CLASSIFIER_ARTIFACTS_PATH"
+fi
+
+if [ -f "$CLASSIFIER_ZDLC_PATH" ]; then
+    echo "✅ Classifier ZDLC model found"
+else
+    echo "⚠️  Classifier ZDLC model NOT found at: $CLASSIFIER_ZDLC_PATH"
+    echo "   (This is OK if not running on s390x)"
+fi
 echo ""
 
 # Verify installations
@@ -131,12 +218,21 @@ echo "=========================================="
 echo "Setup Complete!"
 echo "=========================================="
 echo ""
-echo "To activate the environment in the future, run:"
+echo "Environment is ready for testing!"
+echo ""
+echo "To activate the environment:"
 echo "  source $VENV_DIR/bin/activate"
 echo ""
-echo "To run the E2E test:"
+echo "To run the E2E test with custom config:"
 echo "  cd $DOCLING_IBM_MODELS_DIR"
+echo "  export LAYOUT_ARTIFACTS_PATH='$LAYOUT_ARTIFACTS_PATH'"
+echo "  export LAYOUT_ZDLC_PATH='$LAYOUT_ZDLC_PATH'"
+echo "  export CLASSIFIER_ARTIFACTS_PATH='$CLASSIFIER_ARTIFACTS_PATH'"
+echo "  export CLASSIFIER_ZDLC_PATH='$CLASSIFIER_ZDLC_PATH'"
 echo "  python test_e2e_zdlc_flow.py"
+echo ""
+echo "Or use the quick test script:"
+echo "  ./run_e2e_test.sh"
 echo ""
 echo "To deactivate the environment:"
 echo "  deactivate"
