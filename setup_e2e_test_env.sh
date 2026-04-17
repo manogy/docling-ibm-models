@@ -102,7 +102,13 @@ echo ""
 
 # Upgrade pip
 echo "Upgrading pip..."
-pip install --upgrade pip setuptools wheel
+pip install --upgrade pip setuptools wheel --only-binary :all:
+echo ""
+
+# Configure pip to prefer binary packages
+echo "Configuring pip to use only binary packages..."
+pip config set global.only-binary ":all:"
+echo "✅ Pip configured to use only binary packages"
 echo ""
 
 # Install docling-ibm-models (current directory)
@@ -111,7 +117,7 @@ echo "Installing docling-ibm-models (Layer 1)"
 echo "=========================================="
 cd "$DOCLING_IBM_MODELS_DIR"
 echo "Current branch: $(git branch --show-current 2>/dev/null || echo 'detached HEAD')"
-pip install -e .
+pip install -e . --only-binary :all: || pip install -e .
 echo "✅ docling-ibm-models installed"
 echo ""
 
@@ -121,7 +127,7 @@ echo "Installing wdu (Layer 2)"
 echo "=========================================="
 cd "$WDU_DIR"
 echo "Current branch: $(git branch --show-current 2>/dev/null || echo 'detached HEAD')"
-pip install -e .
+pip install -e . --only-binary :all: || pip install -e .
 echo "✅ wdu installed"
 echo ""
 
@@ -164,7 +170,7 @@ echo "Installing watson_doc_understanding (Layer 3)"
 echo "=========================================="
 cd "$WATSON_DOC_DIR"
 echo "Current branch: $(git branch --show-current 2>/dev/null || echo 'detached HEAD')"
-pip install -e .
+pip install -e . --only-binary :all: || pip install -e .
 echo "✅ watson_doc_understanding installed"
 echo ""
 
@@ -173,7 +179,7 @@ echo "=========================================="
 echo "Installing test dependencies"
 echo "=========================================="
 cd "$DOCLING_IBM_MODELS_DIR"
-pip install pytest requests
+pip install pytest requests --only-binary :all:
 echo "✅ Test dependencies installed"
 echo ""
 
