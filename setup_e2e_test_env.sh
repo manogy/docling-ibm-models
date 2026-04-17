@@ -62,7 +62,7 @@ fi
 echo ""
 
 # Set Python path - use custom Python 3.11.2 if available, otherwise system python3
-PYTHON_BIN="$HOME/python-3.11.2/bin/python3.11"
+PYTHON_BIN="/root/python-3.11.2/bin/python3.11"
 
 if [ -f "$PYTHON_BIN" ]; then
     echo "Using custom Python: $PYTHON_BIN"
