@@ -61,9 +61,21 @@ else
 fi
 echo ""
 
+# Set Python path - use custom Python 3.11.2 if available, otherwise system python3
+PYTHON_BIN="$HOME/python-3.11.2/bin/python3.11"
+
+if [ -f "$PYTHON_BIN" ]; then
+    echo "Using custom Python: $PYTHON_BIN"
+    PYTHON_CMD="$PYTHON_BIN"
+else
+    echo "Custom Python not found at $PYTHON_BIN"
+    echo "Using system python3"
+    PYTHON_CMD="python3"
+fi
+
 # Check Python version
 echo "Checking Python version..."
-PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
+PYTHON_VERSION=$($PYTHON_CMD --version 2>&1 | awk '{print $2}')
 echo "Python version: $PYTHON_VERSION"
 
 if [[ ! "$PYTHON_VERSION" =~ ^3\.(11|12) ]]; then
@@ -74,8 +86,8 @@ echo ""
 # Create virtual environment if it doesn't exist
 VENV_DIR="$SCRIPT_DIR/venv_e2e_test"
 if [ ! -d "$VENV_DIR" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv "$VENV_DIR"
+    echo "Creating virtual environment with $PYTHON_CMD..."
+    $PYTHON_CMD -m venv "$VENV_DIR"
     echo "✅ Virtual environment created at $VENV_DIR"
 else
     echo "✅ Virtual environment already exists at $VENV_DIR"
