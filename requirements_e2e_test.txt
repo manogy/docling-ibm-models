@@ -1,0 +1,199 @@
+# Requirements for End-to-End ZDLC Integration Testing
+# This file contains all dependencies needed to run the E2E test suite
+# across watson_doc_understanding → wdu → docling-ibm-models
+
+# ============================================================================
+# LAYER 1: docling-ibm-models Core Dependencies
+# ============================================================================
+
+# Deep Learning Framework
+torch>=2.2.2,<3.0.0
+torchvision>=0,<1
+
+# Transformers and Model Hub
+transformers>=4.42.0,<6.0.0,!=4.50.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*
+huggingface_hub>=0.23,<2
+accelerate>=1.2.1,<2.0.0
+safetensors[torch]>=0.4.3,<1
+
+# Image Processing
+Pillow>=10.0.0,<13.0.0
+
+# Data Processing
+numpy>=1.24.4,<3.0.0
+pydantic>=2.0.0,<3.0.0
+jsonlines>=3.1.0,<5.0.0
+
+# Utilities
+tqdm>=4.64.0,<5.0.0
+rtree>=1.0.0
+
+# Docling Core
+docling-core>=2.19.0,<3.0.0
+
+# ============================================================================
+# LAYER 2: wdu Dependencies
+# ============================================================================
+
+# Document Processing
+pypdfium2==4.30.0
+python-docx==1.1.2
+python-pptx==1.0.2
+docling~=2.73.1
+
+# OCR
+IOCR==1.10.14
+
+# CLI and Config
+typer>=0.12
+python-dotenv>=1.0.1
+
+# HTML Processing
+beautifulsoup4~=4.12.3
+html5lib~=1.1
+validators~=0.33.0
+
+# JSON and Serialization
+orjson>=3.10
+numpyencoder==0.3.0
+lz4>=4.3
+
+# Text Processing
+editdistance==0.8.1
+uniseg~=0.9.0
+
+# AI/ML
+ibm_watsonx_ai>=1.3.13
+litellm>=1.81
+
+# Data Processing
+pyarrow>=23.0.1,<24.0.0
+dataclass-wizard>=0.35.0
+
+# Utilities
+rich==13.9.4
+zxing-cpp>=2.3.0
+pypdf>=6.9.1
+pillow-heif>=1.1.1
+
+# ============================================================================
+# LAYER 3: watson_doc_understanding Dependencies
+# ============================================================================
+
+# HTTP Framework
+fastapi>=0.115
+python-multipart>=0.0.22
+uvicorn>=0.32
+aiofiles>=24.1
+httpx>=0.28
+httpcore>=1.0.9
+tenacity>=9.0
+
+# Monitoring and Metrics
+prometheus-client>=0.21
+instana>=3.10.1
+opentelemetry-api>=1.39.1
+opentelemetry-sdk>=1.39.1
+opentelemetry-instrumentation-asgi==0.60b1
+opentelemetry-exporter-otlp-proto-http>=1.39.1
+starlette-prometheus>=0.10
+objgraph>=3.6
+
+# Databases and Queues
+redis[hiredis]>=5.2,<7
+inotify
+pika>=1.3
+psycopg[binary]~=3.2
+psycopg-pool~=3.2
+boto3>=1.42.40
+botocore>=1.42.40
+confluent-kafka>=2.6
+
+# Logging and Config
+alchemy-logging>=1.5
+alchemy-config>=1.1
+
+# Security
+cryptography>=46
+cachetools>=7
+
+# OpenCV (FIPS workaround)
+opencv-python-headless<=4.12.0.88
+
+# ============================================================================
+# Testing Dependencies
+# ============================================================================
+
+# Core Testing
+pytest>=8.3.4,<10.0.0
+pytest-cov>=3.0.0
+pytest-html>=3.2.0,<5.0.0
+pytest-xdist>=2.5.0
+pytest-timeout>=2.3.0
+pytest-asyncio>=0.24.0
+pytest-snapshot>=0.9.0
+pytest-mock
+pytest-reraise>=2.1.2
+
+# Test Utilities
+jsonschema==4.23.0
+deepdiff
+Levenshtein>=0.27.1
+
+# HTTP Testing
+requests>=2.31.0
+
+# ============================================================================
+# ZDLC Support (IBM Z / s390x only)
+# ============================================================================
+
+# Uncomment the following line if running on IBM Z (s390x) with ZDLC:
+# zdlc_pyrt @ git+ssh://git@github.ibm.com/zosdev/zdlc_pyrt.git
+
+# Note: ZDLC is automatically detected and used when:
+# 1. Running on s390x architecture
+# 2. zdlc_pyrt package is installed
+# 3. Compiled ZDLC models (.so files) are available
+
+# ============================================================================
+# Optional Dependencies
+# ============================================================================
+
+# For development and linting
+# ruff==0.9.4
+# black~=24.4
+# isort~=5.10
+# mypy~=1.10
+# flake8~=7.1
+
+# For additional model testing
+# datasets~=3.2
+# mlflow>=3.10.0
+# easyocr==1.7.2
+# rapidocr_onnxruntime==1.4.4
+
+# ============================================================================
+# Installation Instructions
+# ============================================================================
+
+# Standard Installation (x86_64, ARM, etc.):
+# pip install -r requirements_e2e_test.txt
+
+# IBM Z (s390x) Installation with ZDLC:
+# 1. Install ZDLC runtime first (contact IBM Z team for access)
+# 2. Uncomment the zdlc_pyrt line above
+# 3. pip install -r requirements_e2e_test.txt
+
+# Minimal Installation (for testing docling-ibm-models only):
+# pip install torch torchvision transformers Pillow numpy pydantic \
+#             docling-core safetensors huggingface_hub accelerate
+
+# ============================================================================
+# Version Notes
+# ============================================================================
+
+# - Python 3.11 or 3.12 required (3.13+ not fully tested)
+# - PyTorch 2.2.2+ required for model compatibility
+# - Transformers 4.42.0+ required, excluding 4.50.0 (known issues)
+# - OpenCV pinned to <=4.12.0.88 for FIPS compliance
+# - Some packages have exact versions for stability (e.g., IOCR, pypdfium2)
