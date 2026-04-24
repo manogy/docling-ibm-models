@@ -178,7 +178,7 @@ class TFPredictor:
 
         # Use lock to prevent threading issues during model initialization
         with _model_init_lock:
-            model = TableModel04_rs(self._config, self._init_data, self._device)
+            model = TableModel04_rs(self._config, self._init_data, device="cpu")
 
             if model is None:
                 err_msg = "Not able to initiate a model for {}".format(self._model_type)
@@ -201,14 +201,16 @@ class TFPredictor:
             model_fn = models_fn[
                 0
             ]  # Take the first tableformer safetensors file inside the save_dir
-            missing, unexpected = load_model(model, model_fn, device=self._device)
+            missing, unexpected = load_model(model, model_fn, device="cpu")
             if missing or unexpected:
                 err_msg = "Not able to load the model weights for {}".format(
                     self._model_type
                 )
                 self._log().error(err_msg)
                 raise ValueError(err_msg)
-
+        
+        model._device = self._device
+        model = model.to(self._device)
         return model
 
     def get_device(self):
