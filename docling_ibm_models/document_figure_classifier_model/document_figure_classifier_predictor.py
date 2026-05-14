@@ -1,4 +1,5 @@
 import logging
+import os
 import platform
 import threading
 from typing import List, Optional, Tuple, Union
@@ -16,12 +17,17 @@ _model_init_lock = threading.Lock()
 # Detect architecture at module load time
 _IS_S390X = platform.machine().lower() in ['s390x', 's390']
 
+# Check environment variable for ZDLC usage for document_figure_classifier
+_USE_ZDLC_DOCUMENT_FIGURE_CLASSIFIER = os.environ.get(
+    'document_figure_classifier_model', ''
+).lower() == 'true'
+
 # Conditional imports based on architecture
 if _IS_S390X:
     try:
         import zdlc_pyrt
         _ZDLC_AVAILABLE = True
-        _log.info("Running on s390x architecture - ZDLC backend will be used")
+        _log.info("Running on s390x architecture - ZDLC available")
     except ImportError:
         _ZDLC_AVAILABLE = False
         _log.warning("Running on s390x but zdlc_pyrt not available, falling back to PyTorch")
@@ -114,10 +120,16 @@ class DocumentFigureClassifierPredictor:
         self._num_threads = num_threads
         self._model = None
         self._zdlc_session = None
-        
+
         # Determine which backend to use
-        use_zdlc = _IS_S390X and _ZDLC_AVAILABLE
-        
+        # All conditions must be met: s390x AND ZDLC available AND env var true
+        use_zdlc = _IS_S390X and _ZDLC_AVAILABLE and _USE_ZDLC_DOCUMENT_FIGURE_CLASSIFIER
+
+        if use_zdlc:
+            _log.info("Using ZDLC backend: s390x=True, zdlc_available=True, document_figure_classifier_model=true")
+        elif _IS_S390X and _ZDLC_AVAILABLE and not _USE_ZDLC_DOCUMENT_FIGURE_CLASSIFIER:
+            _log.info("ZDLC available but document_figure_classifier_model env var not set to true, using PyTorch")
+
         if use_zdlc:
             if zdlc_model_path is None:
                 raise ValueError(
@@ -130,7 +142,7 @@ class DocumentFigureClassifierPredictor:
             self._backend = "PyTorch"
             self._device = device
             self._init_pytorch(artifacts_path, device)
-        
+
         _log.info(f"DocumentFigureClassifierPredictor initialized with {self._backend} backend")
         _log.debug("DocumentFigureClassifierPredictor settings: {}".format(self.info()))
 
@@ -299,11 +311,9 @@ class DocumentFigureClassifierPredictor:
         # Process outputs
         # outputs[0] should contain logits (batch_size, num_classes)
         logits = outputs[0]
-        
         # Check if output is already probabilities (sum to ~1) or logits
         # If already probabilities, use directly; otherwise apply softmax
         first_sample_sum = np.sum(np.abs(logits[0]))
-        
         if 0.99 < first_sample_sum < 1.01:
             # Already probabilities
             probs_batch = logits.tolist()

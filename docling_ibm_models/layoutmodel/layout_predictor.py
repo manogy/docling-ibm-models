@@ -19,12 +19,17 @@ _model_init_lock = threading.Lock()
 # Detect architecture at module load time
 _IS_S390X = platform.machine().lower() in ['s390x', 's390']
 
+# Check environment variable for ZDLC usage for layout_predictor
+_USE_ZDLC_LAYOUT_PREDICTOR = os.environ.get(
+    'layout_predictor', ''
+).lower() == 'true'
+
 # Conditional imports based on architecture
 if _IS_S390X:
     try:
         import zdlc_pyrt
         _ZDLC_AVAILABLE = True
-        _log.info("Running on s390x architecture - ZDLC backend will be used")
+        _log.info("Running on s390x architecture - ZDLC available")
     except ImportError:
         _ZDLC_AVAILABLE = False
         _log.warning("Running on s390x but zdlc_pyrt not available, falling back to PyTorch")
@@ -42,7 +47,6 @@ else:
 class LayoutPredictor:
     """
     Document layout prediction using safe tensors or ZDLC.
-    
     Automatically uses ZDLC backend on s390x architecture, PyTorch on others.
     """
 
@@ -84,10 +88,15 @@ class LayoutPredictor:
         self._num_threads = num_threads
         self._model = None
         self._zdlc_session = None
-        
+
         # Determine which backend to use
-        use_zdlc = _IS_S390X and _ZDLC_AVAILABLE
-        
+        # All conditions must be met: s390x AND ZDLC available AND env var true
+        use_zdlc = _IS_S390X and _ZDLC_AVAILABLE and _USE_ZDLC_LAYOUT_PREDICTOR
+
+        if use_zdlc:
+            _log.info("Using ZDLC backend: s390x=True, zdlc_available=True, layout_predictor=true")
+        elif _IS_S390X and _ZDLC_AVAILABLE and not _USE_ZDLC_LAYOUT_PREDICTOR:
+            _log.info("ZDLC available but layout_predictor env var not set to true, using PyTorch")
         if use_zdlc:
             if zdlc_model_path is None:
                 raise ValueError(
@@ -100,7 +109,6 @@ class LayoutPredictor:
             self._backend = "PyTorch"
             self._device = device
             self._init_pytorch(artifact_path, device)
-        
         _log.info(f"LayoutPredictor initialized with {self._backend} backend")
         _log.debug("LayoutPredictor settings: {}".format(self.info()))
 
@@ -115,7 +123,6 @@ class LayoutPredictor:
         self._processor_config = os.path.join(artifact_path, "preprocessor_config.json")
         self._model_config = os.path.join(artifact_path, "config.json")
         self._st_fn = os.path.join(artifact_path, "model.safetensors")
-        
         if not os.path.isfile(self._st_fn):
             raise FileNotFoundError("Missing safe tensors file: {}".format(self._st_fn))
         if not os.path.isfile(self._processor_config):
@@ -291,7 +298,7 @@ class LayoutPredictor:
 
         # Run ZDLC inference - model expects [pixel_values, target_sizes]
         outputs = self._zdlc_session.run([pixel_values, target_sizes])
-        
+
         # ZDLC model outputs are already post-processed:
         # Output 0: labels (batch_size, num_queries) - int64
         # Output 1: boxes (batch_size, num_queries, 4) - float32, absolute coords
@@ -299,7 +306,7 @@ class LayoutPredictor:
         pred_labels = outputs[0]  # (batch_size, num_queries)
         pred_boxes = outputs[1]   # (batch_size, num_queries, 4)
         pred_scores = outputs[2]  # (batch_size, num_queries)
-        
+
         # Filter by threshold
         results = []
         for i in range(pred_labels.shape[0]):
@@ -452,12 +459,12 @@ class LayoutPredictor:
 
         # Run ZDLC inference - model expects [pixel_values, target_sizes]
         outputs = self._zdlc_session.run([pixel_values, target_sizes])
-        
+
         # ZDLC model outputs are already post-processed
         pred_labels = outputs[0]
         pred_boxes = outputs[1]
         pred_scores = outputs[2]
-        
+
         # Filter by threshold
         results_list = []
         for i in range(pred_labels.shape[0]):
