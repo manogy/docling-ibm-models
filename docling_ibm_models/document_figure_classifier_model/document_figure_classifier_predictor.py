@@ -24,7 +24,7 @@ _DOCLING_DISABLE_ZDLC = os.environ.get(
 
 # Check environment variable for ZDLC usage for document_figure_classifier
 _USE_ZDLC_DOCUMENT_FIGURE_CLASSIFIER = os.environ.get(
-    'DOCUMENT_FIGURE_CLASSIFIER_MODEL', ''
+    'DOCLING_ZDLC_DOCUMENT_FIGURE_CLASSIFIER', ''
 ).lower() == 'true'
 
 # Conditional imports based on architecture and disable switch
@@ -138,9 +138,9 @@ class DocumentFigureClassifierPredictor:
         if _DOCLING_DISABLE_ZDLC:
             _log.info("ZDLC disabled via DOCLING_DISABLE_ZDLC=true, using PyTorch")
         elif use_zdlc:
-            _log.info("Using ZDLC backend: s390x=True, zdlc_available=True, DOCUMENT_FIGURE_CLASSIFIER_MODEL=true")
+            _log.info("Using ZDLC backend: s390x=True, zdlc_available=True, DOCLING_ZDLC_DOCUMENT_FIGURE_CLASSIFIER=true")
         elif _IS_S390X and _ZDLC_AVAILABLE and not _USE_ZDLC_DOCUMENT_FIGURE_CLASSIFIER:
-            _log.info("ZDLC available but DOCUMENT_FIGURE_CLASSIFIER_MODEL env var not set to true, using PyTorch")
+            _log.info("ZDLC available but DOCLING_ZDLC_DOCUMENT_FIGURE_CLASSIFIER env var not set to true, using PyTorch")
 
         if use_zdlc:
             if zdlc_model_path is None:

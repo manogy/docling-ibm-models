@@ -26,7 +26,7 @@ _DOCLING_DISABLE_ZDLC = os.environ.get(
 
 # Check environment variable for ZDLC usage for layout_predictor
 _USE_ZDLC_LAYOUT_PREDICTOR = os.environ.get(
-    'LAYOUT_PREDICTOR', ''
+    'DOCLING_ZDLC_LAYOUT_PREDICTOR', ''
 ).lower() == 'true'
 
 # Conditional imports based on architecture and disable switch
@@ -106,9 +106,9 @@ class LayoutPredictor:
         if _DOCLING_DISABLE_ZDLC:
             _log.info("ZDLC disabled via DOCLING_DISABLE_ZDLC=true, using PyTorch")
         elif use_zdlc:
-            _log.info("Using ZDLC backend: s390x=True, zdlc_available=True, LAYOUT_PREDICTOR=true")
+            _log.info("Using ZDLC backend: s390x=True, zdlc_available=True, DOCLING_ZDLC_LAYOUT_PREDICTOR=true")
         elif _IS_S390X and _ZDLC_AVAILABLE and not _USE_ZDLC_LAYOUT_PREDICTOR:
-            _log.info("ZDLC available but LAYOUT_PREDICTOR env var not set to true, using PyTorch")
+            _log.info("ZDLC available but DOCLING_ZDLC_LAYOUT_PREDICTOR env var not set to true, using PyTorch")
         if use_zdlc:
             if zdlc_model_path is None:
                 raise ValueError(
