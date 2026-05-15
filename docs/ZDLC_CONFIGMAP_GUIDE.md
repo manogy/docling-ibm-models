@@ -241,35 +241,322 @@ kubectl set env deployment/your-deployment --from=configmap/docling-zdlc-config
 kubectl rollout restart deployment/your-deployment
 ```
 
+## Validation Steps
+
+### Step 1: Verify Environment Variables
+
+Check that your environment variables are correctly set in the pod:
+
+```bash
+# Get pod name
+POD_NAME=$(kubectl get pods -l app=docling-service -o jsonpath='{.items[0].metadata.name}')
+
+# Check environment variables
+kubectl exec $POD_NAME -- env | grep DOCLING
+```
+
+Expected output:
+```
+DOCLING_DISABLE_ZDLC=false
+DOCLING_ZDLC_LAYOUT_PREDICTOR=true
+DOCLING_ZDLC_DOCUMENT_FIGURE_CLASSIFIER=true
+```
+
+---
+
+### Step 2: Check Application Logs for Backend Detection
+
+View the application logs to verify which backend is being used:
+
+```bash
+# View logs
+kubectl logs $POD_NAME | grep -E "(s390x|ZDLC|PyTorch|architecture)"
+```
+
+**Expected log messages on s390x with ZDLC enabled:**
+
+```
+INFO - Running on s390x architecture - ZDLC available
+INFO - LayoutPredictor: Using ZDLC backend
+INFO - DocumentFigureClassifier: Using ZDLC backend
+```
+
+**Expected log messages on s390x with ZDLC disabled:**
+
+```
+INFO - Running on s390x architecture - PyTorch backend will be used
+INFO - LayoutPredictor: Using PyTorch backend
+INFO - DocumentFigureClassifier: Using PyTorch backend
+```
+
+**Expected log messages on non-s390x architectures:**
+
+```
+INFO - Running on x86_64 architecture - PyTorch backend will be used
+INFO - LayoutPredictor: Using PyTorch backend
+INFO - DocumentFigureClassifier: Using PyTorch backend
+```
+
+---
+
+### Step 3: Verify ZDLC Package Installation (s390x only)
+
+If running on s390x, verify that the ZDLC package is installed:
+
+```bash
+# Check if zdlc_pyrt is installed
+kubectl exec $POD_NAME -- python -c "import zdlc_pyrt; print('ZDLC version:', zdlc_pyrt.__version__)"
+```
+
+**Expected output if installed:**
+```
+ZDLC version: <version-number>
+```
+
+**Expected output if not installed:**
+```
+ModuleNotFoundError: No module named 'zdlc_pyrt'
+```
+
+If not installed, you'll see a warning in logs:
+```
+WARNING - Running on s390x but zdlc_pyrt not available, falling back to PyTorch
+```
+
+---
+
+### Step 4: Test Model Inference
+
+Run a simple inference test to verify the models are working:
+
+```bash
+# Create a test script
+cat <<'EOF' > test_zdlc.py
+import platform
+import os
+from docling_ibm_models.layoutmodel.layout_predictor import LayoutPredictor
+from docling_ibm_models.document_figure_classifier_model.document_figure_classifier_predictor import DocumentFigureClassifierPredictor
+
+print(f"Architecture: {platform.machine()}")
+print(f"DOCLING_DISABLE_ZDLC: {os.environ.get('DOCLING_DISABLE_ZDLC', 'not set')}")
+print(f"DOCLING_ZDLC_LAYOUT_PREDICTOR: {os.environ.get('DOCLING_ZDLC_LAYOUT_PREDICTOR', 'not set')}")
+print(f"DOCLING_ZDLC_DOCUMENT_FIGURE_CLASSIFIER: {os.environ.get('DOCLING_ZDLC_DOCUMENT_FIGURE_CLASSIFIER', 'not set')}")
+
+# Initialize models
+print("\nInitializing LayoutPredictor...")
+layout_predictor = LayoutPredictor()
+print("✓ LayoutPredictor initialized successfully")
+
+print("\nInitializing DocumentFigureClassifier...")
+classifier = DocumentFigureClassifierPredictor()
+print("✓ DocumentFigureClassifier initialized successfully")
+
+print("\n✓ All models initialized successfully with configured backend")
+EOF
+
+# Copy and run the test
+kubectl cp test_zdlc.py $POD_NAME:/tmp/test_zdlc.py
+kubectl exec $POD_NAME -- python /tmp/test_zdlc.py
+```
+
+**Expected output:**
+```
+Architecture: s390x
+DOCLING_DISABLE_ZDLC: false
+DOCLING_ZDLC_LAYOUT_PREDICTOR: true
+DOCLING_ZDLC_DOCUMENT_FIGURE_CLASSIFIER: true
+
+Initializing LayoutPredictor...
+INFO - Running on s390x architecture - ZDLC available
+✓ LayoutPredictor initialized successfully
+
+Initializing DocumentFigureClassifier...
+INFO - Running on s390x architecture - ZDLC available
+✓ DocumentFigureClassifier initialized successfully
+
+✓ All models initialized successfully with configured backend
+```
+
+---
+
+### Step 5: Performance Validation
+
+Compare inference times between ZDLC and PyTorch backends:
+
+```bash
+# Test with ZDLC enabled
+kubectl set env deployment/docling-service DOCLING_ZDLC_LAYOUT_PREDICTOR=true
+kubectl rollout status deployment/docling-service
+# Run your performance tests and record metrics
+
+# Test with PyTorch (disable ZDLC)
+kubectl set env deployment/docling-service DOCLING_ZDLC_LAYOUT_PREDICTOR=false
+kubectl rollout status deployment/docling-service
+# Run the same performance tests and compare
+```
+
+**Metrics to monitor:**
+- Inference latency (ms per document)
+- Throughput (documents per second)
+- CPU utilization
+- Memory usage
+
+---
+
+### Step 6: Validate Configuration Changes
+
+After changing ConfigMap values, verify the changes are applied:
+
+```bash
+# Update ConfigMap
+kubectl edit configmap docling-zdlc-config
+
+# Restart deployment to pick up changes
+kubectl rollout restart deployment/docling-service
+
+# Wait for rollout to complete
+kubectl rollout status deployment/docling-service
+
+# Verify new environment variables
+POD_NAME=$(kubectl get pods -l app=docling-service -o jsonpath='{.items[0].metadata.name}')
+kubectl exec $POD_NAME -- env | grep DOCLING
+
+# Check logs for new backend selection
+kubectl logs $POD_NAME | grep -E "(ZDLC|PyTorch|backend)"
+```
+
+---
+
 ## Troubleshooting
 
 ### ZDLC not being used on s390x
 
-1. Check if `DOCLING_DISABLE_ZDLC` is set to `"true"`
-2. Verify the per-model environment variable is set to `"true"`
-3. Ensure `zdlc_pyrt` package is installed
-4. Check application logs for ZDLC availability messages
+**Symptoms:**
+- Logs show "PyTorch backend will be used" on s390x
+- Expected ZDLC performance improvements not observed
+
+**Diagnostic steps:**
+
+1. **Check master disable switch:**
+   ```bash
+   kubectl exec $POD_NAME -- env | grep DOCLING_DISABLE_ZDLC
+   ```
+   Should be `"false"` or not set
+
+2. **Verify per-model environment variable:**
+   ```bash
+   kubectl exec $POD_NAME -- env | grep DOCLING_ZDLC_LAYOUT_PREDICTOR
+   ```
+   Should be `"true"` to enable ZDLC
+
+3. **Ensure zdlc_pyrt package is installed:**
+   ```bash
+   kubectl exec $POD_NAME -- python -c "import zdlc_pyrt; print('OK')"
+   ```
+   Should print "OK" without errors
+
+4. **Check application logs for warnings:**
+   ```bash
+   kubectl logs $POD_NAME | grep -i "zdlc\|warning\|error"
+   ```
+
+**Common issues:**
+- `DOCLING_DISABLE_ZDLC` is set to `"true"` → Set to `"false"`
+- Per-model variable not set to `"true"` → Update ConfigMap
+- `zdlc_pyrt` not installed → Install package in container image
+- Wrong architecture detected → Verify with `platform.machine()`
+
+---
 
 ### Verifying backend in use
 
-Check the application logs at startup. You should see messages like:
+**Method 1: Check startup logs**
 
-```
-INFO - Running on s390x architecture - ZDLC available
+```bash
+kubectl logs $POD_NAME | head -50 | grep -E "(architecture|ZDLC|PyTorch)"
 ```
 
-or
+Expected messages:
+- **ZDLC enabled:** `INFO - Running on s390x architecture - ZDLC available`
+- **ZDLC disabled:** `INFO - Running on s390x architecture - PyTorch backend will be used`
+- **Non-s390x:** `INFO - Running on x86_64 architecture - PyTorch backend will be used`
 
+**Method 2: Runtime verification**
+
+```bash
+kubectl exec $POD_NAME -- python -c "
+from docling_ibm_models.layoutmodel import layout_predictor
+print('ZDLC Available:', layout_predictor._ZDLC_AVAILABLE)
+print('Architecture:', layout_predictor._IS_S390X)
+print('Disable ZDLC:', layout_predictor._DOCLING_DISABLE_ZDLC)
+print('Use ZDLC Layout:', layout_predictor._USE_ZDLC_LAYOUT_PREDICTOR)
+"
 ```
-INFO - Running on x86_64 architecture - PyTorch backend will be used
-```
+
+---
 
 ### Performance issues
 
-If experiencing performance issues:
-1. Try enabling ZDLC on s390x by setting model-specific variables to `"true"`
-2. Compare performance with PyTorch by setting `DOCLING_DISABLE_ZDLC: "true"`
-3. Monitor resource usage (CPU, memory) with both backends
+**Symptoms:**
+- Slower than expected inference times
+- High CPU or memory usage
+- Inconsistent performance
+
+**Diagnostic steps:**
+
+1. **Compare ZDLC vs PyTorch performance:**
+   ```bash
+   # Enable ZDLC
+   kubectl set env deployment/docling-service DOCLING_ZDLC_LAYOUT_PREDICTOR=true
+   # Run benchmarks and record metrics
+
+   # Disable ZDLC
+   kubectl set env deployment/docling-service DOCLING_DISABLE_ZDLC=true
+   # Run same benchmarks and compare
+   ```
+
+2. **Monitor resource usage:**
+   ```bash
+   kubectl top pod $POD_NAME
+   ```
+
+3. **Check for errors in logs:**
+   ```bash
+   kubectl logs $POD_NAME | grep -i "error\|exception\|failed"
+   ```
+
+**Solutions:**
+- If ZDLC is slower: Verify `zdlc_pyrt` version compatibility
+- If PyTorch is slower on s390x: Enable ZDLC with `DOCLING_ZDLC_LAYOUT_PREDICTOR=true`
+- If memory issues: Adjust pod resource limits
+- If CPU issues: Check for proper CPU affinity on s390x
+
+---
+
+### ConfigMap changes not taking effect
+
+**Symptoms:**
+- Updated ConfigMap but environment variables unchanged
+- Old backend still being used after update
+
+**Solution:**
+
+```bash
+# Verify ConfigMap was updated
+kubectl get configmap docling-zdlc-config -o yaml
+
+# Restart deployment to pick up changes
+kubectl rollout restart deployment/docling-service
+
+# Wait for new pods
+kubectl rollout status deployment/docling-service
+
+# Verify in new pod
+POD_NAME=$(kubectl get pods -l app=docling-service -o jsonpath='{.items[0].metadata.name}')
+kubectl exec $POD_NAME -- env | grep DOCLING
+```
+
+**Note:** Pods must be restarted for ConfigMap changes to take effect.
 
 ## Best Practices
 
