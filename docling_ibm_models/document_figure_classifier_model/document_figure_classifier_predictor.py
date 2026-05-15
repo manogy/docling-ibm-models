@@ -17,13 +17,18 @@ _model_init_lock = threading.Lock()
 # Detect architecture at module load time
 _IS_S390X = platform.machine().lower() in ['s390x', 's390']
 
+# Check master disable switch for ZDLC
+_DOCLING_DISABLE_ZDLC = os.environ.get(
+    'DOCLING_DISABLE_ZDLC', ''
+).lower() == 'true'
+
 # Check environment variable for ZDLC usage for document_figure_classifier
 _USE_ZDLC_DOCUMENT_FIGURE_CLASSIFIER = os.environ.get(
     'DOCUMENT_FIGURE_CLASSIFIER_MODEL', ''
 ).lower() == 'true'
 
-# Conditional imports based on architecture
-if _IS_S390X:
+# Conditional imports based on architecture and disable switch
+if _IS_S390X and not _DOCLING_DISABLE_ZDLC:
     try:
         import zdlc_pyrt
         _ZDLC_AVAILABLE = True
@@ -122,10 +127,17 @@ class DocumentFigureClassifierPredictor:
         self._zdlc_session = None
 
         # Determine which backend to use
-        # All conditions must be met: s390x AND ZDLC available AND env var true
-        use_zdlc = _IS_S390X and _ZDLC_AVAILABLE and _USE_ZDLC_DOCUMENT_FIGURE_CLASSIFIER
+        # All conditions must be met: NOT disabled AND s390x AND ZDLC available AND env var true
+        use_zdlc = (
+            not _DOCLING_DISABLE_ZDLC and
+            _IS_S390X and
+            _ZDLC_AVAILABLE and
+            _USE_ZDLC_DOCUMENT_FIGURE_CLASSIFIER
+        )
 
-        if use_zdlc:
+        if _DOCLING_DISABLE_ZDLC:
+            _log.info("ZDLC disabled via DOCLING_DISABLE_ZDLC=true, using PyTorch")
+        elif use_zdlc:
             _log.info("Using ZDLC backend: s390x=True, zdlc_available=True, DOCUMENT_FIGURE_CLASSIFIER_MODEL=true")
         elif _IS_S390X and _ZDLC_AVAILABLE and not _USE_ZDLC_DOCUMENT_FIGURE_CLASSIFIER:
             _log.info("ZDLC available but DOCUMENT_FIGURE_CLASSIFIER_MODEL env var not set to true, using PyTorch")

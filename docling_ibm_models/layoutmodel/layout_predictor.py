@@ -19,13 +19,18 @@ _model_init_lock = threading.Lock()
 # Detect architecture at module load time
 _IS_S390X = platform.machine().lower() in ['s390x', 's390']
 
+# Check master disable switch for ZDLC
+_DOCLING_DISABLE_ZDLC = os.environ.get(
+    'DOCLING_DISABLE_ZDLC', ''
+).lower() == 'true'
+
 # Check environment variable for ZDLC usage for layout_predictor
 _USE_ZDLC_LAYOUT_PREDICTOR = os.environ.get(
     'LAYOUT_PREDICTOR', ''
 ).lower() == 'true'
 
-# Conditional imports based on architecture
-if _IS_S390X:
+# Conditional imports based on architecture and disable switch
+if _IS_S390X and not _DOCLING_DISABLE_ZDLC:
     try:
         import zdlc_pyrt
         _ZDLC_AVAILABLE = True
@@ -90,10 +95,17 @@ class LayoutPredictor:
         self._zdlc_session = None
 
         # Determine which backend to use
-        # All conditions must be met: s390x AND ZDLC available AND env var true
-        use_zdlc = _IS_S390X and _ZDLC_AVAILABLE and _USE_ZDLC_LAYOUT_PREDICTOR
+        # All conditions must be met: NOT disabled AND s390x AND ZDLC available AND env var true
+        use_zdlc = (
+            not _DOCLING_DISABLE_ZDLC and
+            _IS_S390X and
+            _ZDLC_AVAILABLE and
+            _USE_ZDLC_LAYOUT_PREDICTOR
+        )
 
-        if use_zdlc:
+        if _DOCLING_DISABLE_ZDLC:
+            _log.info("ZDLC disabled via DOCLING_DISABLE_ZDLC=true, using PyTorch")
+        elif use_zdlc:
             _log.info("Using ZDLC backend: s390x=True, zdlc_available=True, LAYOUT_PREDICTOR=true")
         elif _IS_S390X and _ZDLC_AVAILABLE and not _USE_ZDLC_LAYOUT_PREDICTOR:
             _log.info("ZDLC available but LAYOUT_PREDICTOR env var not set to true, using PyTorch")
