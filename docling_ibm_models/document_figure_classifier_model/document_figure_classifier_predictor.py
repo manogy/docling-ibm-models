@@ -19,7 +19,7 @@ _IS_S390X = platform.machine().lower() in ['s390x', 's390']
 
 # Check environment variable for ZDLC usage for document_figure_classifier
 _USE_ZDLC_DOCUMENT_FIGURE_CLASSIFIER = os.environ.get(
-    'document_figure_classifier_model', ''
+    'DOCUMENT_FIGURE_CLASSIFIER_MODEL', ''
 ).lower() == 'true'
 
 # Conditional imports based on architecture
@@ -126,9 +126,9 @@ class DocumentFigureClassifierPredictor:
         use_zdlc = _IS_S390X and _ZDLC_AVAILABLE and _USE_ZDLC_DOCUMENT_FIGURE_CLASSIFIER
 
         if use_zdlc:
-            _log.info("Using ZDLC backend: s390x=True, zdlc_available=True, document_figure_classifier_model=true")
+            _log.info("Using ZDLC backend: s390x=True, zdlc_available=True, DOCUMENT_FIGURE_CLASSIFIER_MODEL=true")
         elif _IS_S390X and _ZDLC_AVAILABLE and not _USE_ZDLC_DOCUMENT_FIGURE_CLASSIFIER:
-            _log.info("ZDLC available but document_figure_classifier_model env var not set to true, using PyTorch")
+            _log.info("ZDLC available but DOCUMENT_FIGURE_CLASSIFIER_MODEL env var not set to true, using PyTorch")
 
         if use_zdlc:
             if zdlc_model_path is None:

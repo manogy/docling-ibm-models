@@ -4,11 +4,16 @@ Test script for IBM Z (s390x) architecture with ZDLC backend.
 This script uses your existing models and test data.
 """
 
+import os
 import platform
 import sys
 from pathlib import Path
 
 from PIL import Image
+
+# Set environment variables to enable ZDLC before importing models
+os.environ['DOCUMENT_FIGURE_CLASSIFIER_MODEL'] = 'true'
+os.environ['LAYOUT_PREDICTOR'] = 'true'
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -28,7 +33,7 @@ def print_system_info():
     print(f"Machine: {platform.machine()}")
     print(f"Processor: {platform.processor()}")
     print(f"Python version: {sys.version}")
-    
+
     # Check if ZDLC is available
     try:
         import zdlc_pyrt
@@ -36,7 +41,7 @@ def print_system_info():
         print(f"ZDLC backend: Will be used automatically on s390x")
     except ImportError:
         print("ZDLC: Not available (will use PyTorch)")
-    
+
     print("=" * 80)
     print()
 
@@ -81,7 +86,7 @@ def test_layout_predictor():
         if not Path(test_image).exists():
             print(f"❌ Image not found: {test_image}")
             return False
-            
+
         image = Image.open(test_image)
         print(f"Image size: {image.size}")
         print(f"Image mode: {image.mode}")
@@ -91,17 +96,17 @@ def test_layout_predictor():
 
         print(f"\n✅ Prediction completed!")
         print(f"Found {len(predictions)} layout elements:")
-        
+
         # Group by label
         label_counts = {}
         for pred in predictions:
             label = pred['label']
             label_counts[label] = label_counts.get(label, 0) + 1
-        
+
         print("\nLayout elements by type:")
         for label, count in sorted(label_counts.items()):
             print(f"  {label}: {count}")
-        
+
         # Show first 5 predictions
         print("\nFirst 5 predictions:")
         for i, pred in enumerate(predictions[:5], 1):
@@ -168,7 +173,7 @@ def test_figure_classifier():
         if not Path(test_image).exists():
             print(f"❌ Image not found: {test_image}")
             return False
-            
+
         image = Image.open(test_image)
         print(f"Image size: {image.size}")
         print(f"Image mode: {image.mode}")

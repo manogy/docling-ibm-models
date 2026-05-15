@@ -5,12 +5,17 @@ This script automatically detects the architecture and uses the
 appropriate backend.
 """
 
+import os
 import platform
 import sys
 from pathlib import Path
 from typing import Optional
 
 from PIL import Image
+
+# Set environment variables to enable ZDLC before importing models
+os.environ['DOCUMENT_FIGURE_CLASSIFIER_MODEL'] = 'true'
+os.environ['LAYOUT_PREDICTOR'] = 'true'
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
