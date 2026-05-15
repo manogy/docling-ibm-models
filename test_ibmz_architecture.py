@@ -12,8 +12,8 @@ from pathlib import Path
 from PIL import Image
 
 # Set environment variables to enable ZDLC before importing models
-os.environ['DOCLING_ZDLC_DOCUMENT_FIGURE_CLASSIFIER'] = 'true'
-os.environ['DOCLING_ZDLC_LAYOUT_PREDICTOR'] = 'true'
+os.environ['DOCUMENT_FIGURE_CLASSIFIER_MODEL'] = 'true'
+os.environ['LAYOUT_PREDICTOR'] = 'true'
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))

@@ -16,8 +16,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 # Set environment variables to enable ZDLC before importing models
-os.environ['DOCLING_ZDLC_DOCUMENT_FIGURE_CLASSIFIER'] = 'true'
-os.environ['DOCLING_ZDLC_LAYOUT_PREDICTOR'] = 'true'
+os.environ['DOCUMENT_FIGURE_CLASSIFIER_MODEL'] = 'true'
+os.environ['LAYOUT_PREDICTOR'] = 'true'
 
 # Setup logging
 logging.basicConfig(
